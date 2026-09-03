@@ -24,6 +24,13 @@ def health():
 
 from .routers import auth as auth_router
 from .routers import uploads as uploads
+from .routers import auth as auth_router
+from .routers import uploads, machines,metrics, alerts
 
 app.include_router(auth_router.router)
 app.include_router(uploads.router)
+app.include_router(auth_router.router)
+app.include_router(uploads.router)
+app.include_router(machines.router)
+app.include_router(metrics.router)
+app.include_router(alerts.router)
