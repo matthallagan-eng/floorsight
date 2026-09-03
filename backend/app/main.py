@@ -23,5 +23,7 @@ def health():
     return {"status": "ok"}
 
 from .routers import auth as auth_router
+from .routers import uploads as uploads
 
 app.include_router(auth_router.router)
+app.include_router(uploads.router)
