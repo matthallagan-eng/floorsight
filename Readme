@@ -1,0 +1,269 @@
+# FloorSight
+
+Production monitoring and OEE analytics for manufacturing teams. Upload production data or stream it live, track Overall Equipment Effectiveness broken into its component parts, and get alerted when machines drop below threshold.
+
+![Dashboard](docs/dashboard.png)
+
+---
+
+## Why I built this
+
+I spent three years as a controls engineer in food and pharmaceutical manufacturing. Most of that time was on the plant floor with PLCs, HMIs, and industrial networks, and a lot of it was spent watching teams try to answer a simple question: how is the line actually performing right now?
+
+The answer was usually one of two things. Either the plant had a full MES platform, in which case getting a new dashboard meant a change request and a few weeks of waiting. Or somebody was maintaining an Excel workbook that pulled from a database export and broke every time a machine got renamed. Neither felt good. The data existed. Getting it into a shape people could act on was the hard part.
+
+FloorSight is my take on the lightweight version of that problem. I built it end to end so I owned every layer: the schema, the OEE math, the API, the auth, the UI, the deployment. It is not trying to replace an MES. It is trying to be the thing you would actually stand up in an afternoon when you want to see where your downtime is going.
+
+The OEE calculation, the downtime reason codes, and the way machines group by production line all come from the plants I worked in rather than from a tutorial. That is the part I cared most about getting right.
+
+---
+
+## What it does
+
+**Two ways to get data in.** Upload a CSV with production records, or hit the live simulation and watch four machines generate hourly data in real time. The simulator seeds machines automatically if the account is empty, so a new user goes from nothing to a populated dashboard in one click.
+
+**OEE calculated properly.** Availability times Performance times Quality, with each component broken out rather than collapsed into one number. A machine at 78% OEE tells you very little. A machine at 78% where availability is 91% and quality is 97% but performance is 88% tells you to go look at cycle times, not changeovers.
+
+**Downtime Pareto.** Downtime grouped by reason code and sorted descending, because the useful question is not "how much downtime did we have" but "what do I fix first."
+
+**Per-machine drill-down.** A sortable table of every machine with its own OEE breakdown, filterable by production line. Sorted worst first by default, since that is who you are looking for.
+
+**Raw record browsing.** The underlying production records, filterable by machine and paginated. Dashboards are for spotting problems. This is for confirming them.
+
+**User-defined alert rules.** Set a threshold on OEE, availability, quality, or downtime minutes, scoped to one machine or all of them. Rules are evaluated against current data and surface on the dashboard and the alerts page.
+
+**Time range filtering.** Last 6 hours, 24 hours, 7 days, 30 days, or all data. Applies to every metric endpoint.
+
+**Multi-tenant from the start.** Every machine belongs to a user and every query is scoped through that relationship. There is a test that specifically asserts one user cannot see another user's data.
+
+---
+
+## Tech stack
+
+**Backend:** FastAPI, SQLAlchemy 2.0, Alembic, PostgreSQL, Pandas, JWT auth with bcrypt
+
+**Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, Recharts, React Router
+
+**Infrastructure:** Docker and Docker Compose, GitHub Actions CI, Railway for the API and database, Vercel for the frontend
+
+---
+
+## Architecture
+
+```mermaid
+graph LR
+    CSV[CSV upload] -->|multipart POST| API
+    SIM[Live simulator] -->|POST /uploads/simulate| API
+    API[FastAPI] -->|SQLAlchemy| DB[(PostgreSQL)]
+    WEB[React SPA] -->|REST + JWT| API
+
+    style DB fill:#1e3a8a,color:#fff
+    style API fill:#3b82f6,color:#fff
+```
+
+The data model is deliberately small. A User owns many Machines and many AlertRules. Each Machine has many ProductionRecords. That is the whole thing.
+
+Every query starts from the authenticated user and joins down. That is what makes the multi-tenancy work without needing a separate tenant column on every table.
+
+---
+
+## Running it locally
+
+### With Docker
+
+```bash
+git clone https://github.com/matthallagan-eng/floorsight.git
+cd floorsight
+docker compose up --build
+```
+
+Frontend at `localhost:3000`, API at `localhost:8000`, interactive API docs at `localhost:8000/docs`.
+
+### Without Docker
+
+You will need Python 3.12, Node 20, and a PostgreSQL instance.
+
+Backend:
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate          # Windows: .\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env              # then set SECRET_KEY and DATABASE_URL
+alembic upgrade head
+uvicorn app.main:app --reload
+```
+
+Frontend, in a second terminal:
+
+```bash
+cd frontend
+npm install
+echo "VITE_API_URL=http://localhost:8000" > .env
+npm run dev
+```
+
+Register an account at `localhost:5173`, then either upload `sample-data/production_sample.csv` or click "Start live data" in the header.
+
+---
+
+## The OEE math
+
+Standard OEE, following the usual definition:
+
+```
+Availability = Run Time / Planned Production Time
+Performance  = (Ideal Cycle Time * Total Count) / Run Time
+Quality      = Good Count / Total Count
+
+OEE = Availability * Performance * Quality
+```
+
+Run time is planned time minus downtime. Ideal cycle time is configurable per machine and defaults to 3 seconds.
+
+The calculation lives in `backend/app/metrics.py` as a pure function over a list of records, which makes it straightforward to test. `tests/test_metrics.py` covers a perfect run, downtime reducing availability, scrap reducing quality, and the empty input case.
+
+---
+
+## Design decisions
+
+These are the calls I had to make and why. Most of them have a reasonable alternative I did not take.
+
+### Performance is clamped at 100%
+
+Ideal cycle time is an estimate. When it drifts low, which happens constantly in practice because nobody updates the spec after a machine gets retrofitted, the performance calculation produces values above 1.0. That is meaningless as a metric and it breaks chart scales, so the calculation clamps at 1.0.
+
+The honest alternative is to surface it as a data quality warning instead of silently correcting it, which is probably what a production system should do. I chose the clamp because an app that renders a 143% performance figure looks broken rather than rigorous.
+
+### Time ranges anchor to the newest record, not wall-clock time
+
+This one is not obvious and it took me a while to settle on.
+
+Uploaded CSVs can be dated anywhere, and the simulator advances timestamps forward from wherever the existing data ends rather than using the current time. If "last 24 hours" were measured from `datetime.utcnow()`, it would return nothing on almost any realistic dataset, and the app would look broken to anyone who uploaded a historical file.
+
+So the cutoff is measured backward from the most recent record in scope. "Last 24 hours" means the 24 hours before the newest data point, not before right now. Slightly unusual semantics, but it is the behavior that makes the filter useful on real data.
+
+### The simulator advances one hour per tick
+
+The first version stamped every simulated record with the current time. All of them landed in the same hourly bucket, and the trend chart stayed pinned at a single point forever. Advancing an hour per tick produces an actual time series that extends to the right as you watch it.
+
+### Simulation state lives above the router
+
+The simulation timer originally lived inside the dashboard component. Navigating to any other page unmounted it, the effect cleanup fired, and the simulation silently stopped.
+
+It now lives in a SimulationProvider that sits above the route definitions, so it never unmounts. Pages subscribe to a tick counter and refetch when it changes. The context owns the timer and pages just react to it. It is a small architectural change but it is the difference between a demo that survives someone clicking around and one that does not.
+
+### Machines are auto-created on upload
+
+Upload a CSV with a machine name that does not exist and it gets created. No setup screens, no machine registry to populate before you can see anything.
+
+The tradeoff is that a typo in the machine column creates a duplicate machine rather than raising an error. For a tool aimed at getting from CSV to dashboard in one step I think that is the right trade, but it is a real one.
+
+### Reset clears alert rules along with production data
+
+Alert rules reference machines by foreign key, so machines cannot be deleted while rules point at them. Two options: delete the rules, or null out their machine reference so they survive as all-machine rules.
+
+I went with deleting them so that reset returns the account to a genuinely clean state. Someone who wanted their configured thresholds to persist across a data reset would reasonably disagree.
+
+### Tokens are stored in localStorage
+
+Standard for a project this size and it keeps the auth flow simple. It is also vulnerable to XSS in a way httpOnly cookies are not. A production version would move to cookies with CSRF protection. It is listed under known limitations below rather than quietly ignored.
+
+### Loading states are suppressed on refetch
+
+With the simulation polling every three seconds, showing a loading state on every fetch made the entire app strobe. The initial load shows a loading state and subsequent refetches update in place. Slightly less correct, but dramatically better to look at.
+
+---
+
+## Testing
+
+```bash
+cd backend
+pytest -v
+```
+
+Unit tests cover the OEE calculation directly. Integration tests spin up an in-memory SQLite database, register a user through the real API, upload a CSV, and assert the resulting metrics.
+
+The test I care most about is `test_users_cannot_see_each_others_data`. Two users, one uploads, the other queries, and the second must get zero. Multi-tenant isolation is easy to get right by accident and easy to break by accident, so it is worth having pinned down.
+
+---
+
+## Security
+
+Implemented:
+
+- Passwords hashed with bcrypt, never stored or logged in plaintext
+- JWT bearer auth required on every data endpoint
+- Per-user data isolation enforced at the query layer and covered by tests
+- Password length capped at 72 bytes at the schema level, because bcrypt truncates silently above that and it is better to reject than to quietly ignore half a password
+- Containers run as a non-root user
+- CORS restricted to configured origins
+
+Known limitations:
+
+- Tokens in localStorage, as discussed above
+- No rate limiting on the auth endpoints yet
+- No audit logging of data access
+- The demo account is shared and publicly documented, which is intentional here and would obviously be wrong anywhere else
+
+---
+
+## What I would build next
+
+Roughly in the order I would actually do them.
+
+**Downtime reason categories.** Right now reason codes are free text. Grouping them into mechanical, operational, changeover, and material would let the Pareto chart roll up meaningfully, and would let you answer whether something is a maintenance problem or a scheduling problem rather than just listing symptoms. Color coding by category on the chart follows naturally from that.
+
+**MQTT ingestion.** This is the one I most want to do, because it is how plant floors actually publish data. A worker subscribing to `floorsight/{line}/{machine}/production` with QoS 1 and reconnect backoff, writing into the same schema the REST API uses. The simulator would become a publisher rather than an endpoint. It is closer to the real problem than the CSV path is.
+
+**Shift-based aggregation.** Hourly buckets are a reasonable default but nobody on a plant floor thinks in hours. They think in shifts. Grouping by configurable shift boundaries would make the trend chart match how the people using it actually talk about their day.
+
+**Machine detail pages.** Click a machine, get its own trend line, its own downtime breakdown, its own record history.
+
+**Alert delivery.** Right now alerts surface in the UI. Email or Slack delivery would make them actually useful, since nobody sits watching a dashboard.
+
+**Data quality warnings.** Surface the cases the calculation currently smooths over: performance above 100%, records with zero planned time, machines with suspiciously few records.
+
+---
+
+## Project structure
+
+```
+floorsight/
+├── backend/
+│   ├── app/
+│   │   ├── main.py            FastAPI app, CORS, router registration
+│   │   ├── config.py          Settings from environment
+│   │   ├── database.py        Session management
+│   │   ├── models.py          SQLAlchemy models
+│   │   ├── schemas.py         Pydantic request and response models
+│   │   ├── auth.py            Hashing and JWT
+│   │   ├── deps.py            get_current_user dependency
+│   │   ├── metrics.py         OEE calculation
+│   │   └── routers/
+│   ├── alembic/               Migrations
+│   └── tests/
+├── frontend/
+│   └── src/
+│       ├── api/client.ts      Single place that talks to the backend
+│       ├── context/           Auth and simulation providers
+│       ├── components/
+│       └── pages/
+├── sample-data/
+└── docker-compose.yml
+```
+
+---
+
+## A note on scope
+
+This was built in a focused stretch rather than over months, and the scope reflects that. There are places where a production system would need more: proper observability, background job processing for large uploads, a real permissions model beyond single-user ownership. I have tried to be specific about those rather than leaving them implied.
+
+What I wanted to prove to myself was that I could take a problem I understood from the plant floor and build the entire software layer around it, schema through deployment, rather than configuring somebody else's platform to approximate it. That part I am happy with.
+
+---
+
+## License
+
+MIT
