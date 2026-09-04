@@ -70,3 +70,33 @@ class TriggeredAlert(BaseModel):
     threshold: float
     actual: float
     message: str
+
+class MachineMetrics(BaseModel):
+    machine_id: int
+    machine_name: str
+    line: str
+    oee: float
+    availability: float
+    performance: float
+    quality: float
+    total_downtime_min: float
+    total_good: int
+    total_produced: int
+    record_count: int
+
+class ProductionRecordOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    machine_id: int
+    timestamp: datetime
+    planned_time_min: float
+    downtime_min: float
+    total_count: int
+    good_count: int
+    downtime_reason: str | None
+
+
+class RecordPage(BaseModel):
+    records: list[ProductionRecordOut]
+    total: int
+    machine_names: dict[int, str]

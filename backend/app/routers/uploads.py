@@ -7,6 +7,10 @@ from ..database import get_db
 from ..deps import get_current_user
 from ..models import User, Machine, ProductionRecord
 
+import random
+from datetime import datetime, timedelta
+
+
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
 REQUIRED_COLUMNS = {
@@ -82,3 +86,84 @@ async def upload_csv(file: UploadFile = File(...),
         "machines_created": created_machines,
         "machines_total": len(machine_cache),
     }
+
+
+
+@router.post("/simulate")
+def simulate_tick(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    machines = db.query(Machine).filter(Machine.owner_id == current_user.id).all()
+
+    if not machines:
+        seed = [
+            ("Filler-01", "Line 1"),
+            ("Capper-02", "Line 1"),
+            ("Labeler-03", "Line 2"),
+            ("Palletizer-04", "Line 2"),
+        ]
+        for name, line in seed:
+            m = Machine(name=name, line=line, owner_id=current_user.id)
+            db.add(m)
+        db.commit()
+        machines = (
+            db.query(Machine).filter(Machine.owner_id == current_user.id).all()
+        )
+
+    latest = (
+        db.query(ProductionRecord)
+        .join(Machine)
+        .filter(Machine.owner_id == current_user.id)
+        .order_by(ProductionRecord.timestamp.desc())
+        .first()
+    )
+
+    if latest:
+        next_ts = latest.timestamp + timedelta(hours=1)
+    else:
+        next_ts = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+
+    reasons = [
+        "Changeover",
+        "Jam - infeed",
+        "Minor stop",
+        "Mechanical fault",
+        "Material starvation",
+    ]
+
+    created = []
+    for m in machines:
+        downtime = random.choice([0, 0, 0, 0, 3.5, 8.0, 15.0, 22.0])
+        total = random.randint(900, 1250)
+        good = total - random.randint(0, 45)
+
+        rec = ProductionRecord(
+            machine_id=m.id,
+            timestamp=next_ts,
+            planned_time_min=60,
+            downtime_min=downtime,
+            total_count=total,
+            good_count=good,
+            downtime_reason=random.choice(reasons) if downtime else None,
+        )
+        db.add(rec)
+        created.append(rec)
+
+    db.commit()
+
+    return {
+        "machines_updated": len(machines),
+        "timestamp": next_ts,
+        "records_created": len(created),
+    }
+
+@router.delete("/reset", status_code=204)
+def reset_data(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    machines = db.query(Machine).filter(Machine.owner_id == current_user.id).all()
+    for m in machines:
+        db.delete(m)
+    db.commit()

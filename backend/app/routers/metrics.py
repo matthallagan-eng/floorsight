@@ -9,6 +9,8 @@ from ..deps import get_current_user
 from ..models import User, Machine, ProductionRecord
 from ..metrics import compute_oee
 from ..schemas import MetricSummary, TimeSeriesPoint, DowntimeReason
+from ..schemas import RecordPage, ProductionRecordOut
+from ..schemas import MachineMetrics
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
@@ -65,4 +67,77 @@ def downtime_by_reason(machine_id: int | None = None,
     return sorted(
         [DowntimeReason(reason=k, minutes=round(v, 1)) for k, v in totals.items()],
         key=lambda d: d.minutes, reverse=True,
+    )
+
+
+@router.get("/by-machine", response_model=list[MachineMetrics])
+def by_machine(
+    line: str | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(Machine).filter(Machine.owner_id == current_user.id)
+    if line:
+        q = q.filter(Machine.line == line)
+    machines = q.all()
+
+    out: list[MachineMetrics] = []
+    for m in machines:
+        recs = (
+            db.query(ProductionRecord)
+            .filter(ProductionRecord.machine_id == m.id)
+            .all()
+        )
+        r = compute_oee(recs, m.ideal_cycle_time_sec)
+        out.append(
+            MachineMetrics(
+                machine_id=m.id,
+                machine_name=m.name,
+                line=m.line,
+                oee=r.oee,
+                availability=r.availability,
+                performance=r.performance,
+                quality=r.quality,
+                total_downtime_min=r.total_downtime_min,
+                total_good=r.total_good,
+                total_produced=r.total_produced,
+                record_count=len(recs),
+            )
+        )
+
+    return sorted(out, key=lambda m: m.oee)
+
+
+
+
+
+@router.get("/records", response_model=RecordPage)
+def records(
+    machine_id: int | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    machines = db.query(Machine).filter(Machine.owner_id == current_user.id).all()
+    machine_ids = [m.id for m in machines]
+
+    q = db.query(ProductionRecord).filter(
+        ProductionRecord.machine_id.in_(machine_ids)
+    )
+    if machine_id:
+        q = q.filter(ProductionRecord.machine_id == machine_id)
+
+    total = q.count()
+    rows = (
+        q.order_by(ProductionRecord.timestamp.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    return RecordPage(
+        records=rows,
+        total=total,
+        machine_names={m.id: m.name for m in machines},
     )
