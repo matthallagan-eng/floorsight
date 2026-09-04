@@ -10,6 +10,8 @@ from ..models import User, Machine, ProductionRecord
 import random
 from datetime import datetime, timedelta
 
+from ..models import AlertRule
+
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
@@ -158,11 +160,17 @@ def simulate_tick(
         "records_created": len(created),
     }
 
+
 @router.delete("/reset", status_code=204)
 def reset_data(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    db.query(AlertRule).filter(
+        AlertRule.owner_id == current_user.id
+    ).delete(synchronize_session=False)
+    db.commit()
+
     machines = db.query(Machine).filter(Machine.owner_id == current_user.id).all()
     for m in machines:
         db.delete(m)

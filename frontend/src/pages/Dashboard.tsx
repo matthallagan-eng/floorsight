@@ -1,10 +1,20 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
 } from "recharts";
 import { api } from "../api/client";
 import { StatCard } from "../components/StatCard";
+import RangeSelect from "../components/RangeSelect";
+import type { RangeKey } from "../components/RangeSelect";
+import { useSimulation } from "../context/SimulationContext";
 
 interface Summary {
   oee: number;
@@ -16,28 +26,47 @@ interface Summary {
   total_produced: number;
 }
 
+interface TrendPoint {
+  time: string;
+  oee: number;
+}
+
+interface DowntimeRow {
+  reason: string;
+  minutes: number;
+}
+
+interface TriggeredAlert {
+  rule_id: number;
+  machine_name: string;
+  message: string;
+}
+
 const pct = (n: number) => `${(n * 100).toFixed(1)}%`;
-const toneFor = (v: number) =>
-  v >= 0.85 ? "good" : v >= 0.6 ? "warn" : "bad";
+const toneFor = (v: number) => (v >= 0.85 ? "good" : v >= 0.6 ? "warn" : "bad");
 
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [trend, setTrend] = useState<any[]>([]);
-  const [downtime, setDowntime] = useState<any[]>([]);
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [trend, setTrend] = useState<TrendPoint[]>([]);
+  const [downtime, setDowntime] = useState<DowntimeRow[]>([]);
+  const [alerts, setAlerts] = useState<TriggeredAlert[]>([]);
+  const [range, setRange] = useState<RangeKey>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [live, setLive] = useState(false);
-  const timer = useRef<number | null>(null);
 
-  const fetchAll = useCallback(async () => {
+  const { tickCount, stop } = useSimulation();
+
+  const fetchAll = useCallback(async (r: RangeKey) => {
     try {
       const [s, t, d, a] = await Promise.all([
-        api.get<Summary>("/metrics/summary"),
-        api.get<any[]>("/metrics/oee-trend"),
-        api.get<any[]>("/metrics/downtime-by-reason"),
-        api.get<any[]>("/alerts/triggered"),
+        api.get<Summary>(`/metrics/summary?range=${r}`),
+        api.get<{ timestamp: string; value: number }[]>(
+          `/metrics/oee-trend?range=${r}`
+        ),
+        api.get<DowntimeRow[]>(`/metrics/downtime-by-reason?range=${r}`),
+        api.get<TriggeredAlert[]>("/alerts/triggered"),
       ]);
+
       setSummary(s);
       setTrend(
         t.map((p) => ({
@@ -60,38 +89,13 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
-
-  useEffect(() => {
-    if (!live) {
-      if (timer.current) window.clearInterval(timer.current);
-      timer.current = null;
-      return;
-    }
-
-    async function tick() {
-      try {
-        await api.simulate();
-        await fetchAll();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Simulation failed");
-        setLive(false);
-      }
-    }
-
-    tick();
-    timer.current = window.setInterval(tick, 3000);
-
-    return () => {
-      if (timer.current) window.clearInterval(timer.current);
-    };
-  }, [live, fetchAll]);
+    fetchAll(range);
+  }, [fetchAll, range, tickCount]);
 
   async function handleReset() {
-    setLive(false);
+    stop();
     await api.reset();
-    await fetchAll();
+    await fetchAll(range);
   }
 
   if (loading) {
@@ -102,7 +106,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 p-8">
-      <div className="flex items-end justify-between">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-medium text-slate-100">
             Production overview
@@ -112,23 +116,8 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {live && (
-            <span className="flex items-center gap-2 text-sm text-status-good">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-status-good" />
-              Live
-            </span>
-          )}
-          <button
-            onClick={() => setLive(!live)}
-            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
-              live
-                ? "border-status-bad/40 text-status-bad hover:bg-status-bad/10"
-                : "border-surface-border text-slate-400 hover:border-slate-600 hover:text-slate-200"
-            }`}
-          >
-            {live ? "Stop simulation" : "Start live data"}
-          </button>
+        <div className="flex items-center gap-3">
+          <RangeSelect value={range} onChange={setRange} />
           {!empty && (
             <button
               onClick={handleReset}
@@ -152,8 +141,8 @@ export default function Dashboard() {
             No production data yet
           </h2>
           <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
-            Upload a CSV, or click “Start live data” to generate simulated
-            production from four machines.
+            Upload a CSV, or click “Start live data” in the header to generate
+            simulated production from four machines.
           </p>
         </div>
       ) : (
@@ -205,72 +194,84 @@ export default function Dashboard() {
             <h2 className="mb-4 text-sm font-medium text-slate-300">
               OEE trend
             </h2>
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={trend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#242832" />
-                <XAxis dataKey="time" stroke="#64748b" fontSize={11} />
-                <YAxis
-                  stroke="#64748b"
-                  fontSize={11}
-                  unit="%"
-                  domain={[0, 100]}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#171a21",
-                    border: "1px solid #242832",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="oee"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  dot={false}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {trend.length === 0 ? (
+              <p className="py-16 text-center text-sm text-slate-600">
+                No data in this time range
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <LineChart data={trend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#242832" />
+                  <XAxis dataKey="time" stroke="#64748b" fontSize={11} />
+                  <YAxis
+                    stroke="#64748b"
+                    fontSize={11}
+                    unit="%"
+                    domain={[0, 100]}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#171a21",
+                      border: "1px solid #242832",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="oee"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="rounded-xl border border-surface-border bg-surface-raised p-6">
             <h2 className="mb-4 text-sm font-medium text-slate-300">
               Downtime by reason
             </h2>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={downtime} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#242832" />
-                <XAxis
-                  type="number"
-                  stroke="#64748b"
-                  fontSize={11}
-                  unit=" min"
-                />
-                <YAxis
-                  type="category"
-                  dataKey="reason"
-                  stroke="#64748b"
-                  fontSize={11}
-                  width={130}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#171a21",
-                    border: "1px solid #242832",
-                    borderRadius: 8,
-                    fontSize: 12,
-                  }}
-                />
-                <Bar
-                  dataKey="minutes"
-                  fill="#f59e0b"
-                  radius={[0, 4, 4, 0]}
-                  isAnimationActive={false}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+            {downtime.length === 0 ? (
+              <p className="py-16 text-center text-sm text-slate-600">
+                No downtime recorded in this time range
+              </p>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={downtime} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#242832" />
+                  <XAxis
+                    type="number"
+                    stroke="#64748b"
+                    fontSize={11}
+                    unit=" min"
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="reason"
+                    stroke="#64748b"
+                    fontSize={11}
+                    width={130}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: "#171a21",
+                      border: "1px solid #242832",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Bar
+                    dataKey="minutes"
+                    fill="#f59e0b"
+                    radius={[0, 4, 4, 0]}
+                    isAnimationActive={false}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </>
       )}

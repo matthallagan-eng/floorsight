@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useSimulation } from "../context/SimulationContext";
 
 interface ProductionRecord {
   id: number;
@@ -25,6 +26,7 @@ export default function Records() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { tickCount } = useSimulation();
 
   useEffect(() => {
     setLoading(true);
@@ -39,7 +41,7 @@ export default function Records() {
       .then(setData)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [machineId, offset]);
+  }, [machineId, offset, tickCount]);
 
   if (loading && !data) {
     return <div className="p-8 text-slate-500">Loading records…</div>;

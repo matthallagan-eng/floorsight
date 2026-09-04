@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useSimulation } from "../context/SimulationContext";
 
 interface AlertRule {
   id: number;
@@ -43,6 +44,7 @@ export default function Alerts() {
   const [threshold, setThreshold] = useState("75");
   const [machineId, setMachineId] = useState("all");
   const [saving, setSaving] = useState(false);
+  const { tickCount } = useSimulation();
 
   const isFraction = METRICS.find((m) => m.value === metric)?.fraction ?? true;
 
@@ -66,6 +68,10 @@ export default function Alerts() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [tickCount]);
 
   async function createRule() {
     const raw = parseFloat(threshold);

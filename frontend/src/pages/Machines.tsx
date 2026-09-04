@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import RangeSelect from "../components/RangeSelect";
+import type { RangeKey } from "../components/RangeSelect";
+import { useSimulation } from "../context/SimulationContext";
 
 interface MachineMetrics {
   machine_id: number;
@@ -26,17 +29,18 @@ function toneClass(v: number) {
 export default function Machines() {
   const [rows, setRows] = useState<MachineMetrics[]>([]);
   const [line, setLine] = useState<string>("all");
+  const [range, setRange] = useState<RangeKey>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { tickCount } = useSimulation();
 
   useEffect(() => {
-    setLoading(true);
     api
-      .get<MachineMetrics[]>("/metrics/by-machine")
+      .get<MachineMetrics[]>(`/metrics/by-machine?range=${range}`)
       .then(setRows)
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [range, tickCount]);
 
   const lines = Array.from(new Set(rows.map((r) => r.line))).sort();
   const visible = line === "all" ? rows : rows.filter((r) => r.line === line);
@@ -89,6 +93,29 @@ export default function Machines() {
           </select>
         </div>
       </div>
+
+        <div className="flex items-center gap-3">
+          <RangeSelect value={range} onChange={setRange} />
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="line" className="text-sm text-slate-500">
+              Line
+            </label>
+            <select
+              id="line"
+              value={line}
+              onChange={(e) => setLine(e.target.value)}
+              className="rounded-lg border border-surface-border bg-surface-raised px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-accent"
+            >
+              <option value="all">All lines</option>
+              {lines.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+          </div>
+       </div>
 
       <div className="overflow-hidden rounded-xl border border-surface-border bg-surface-raised">
         <table className="w-full text-sm">

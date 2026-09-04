@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { SimulationProvider } from "./context/SimulationContext";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -26,65 +27,67 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              <PublicOnly>
-                <Login />
-              </PublicOnly>
-            }
-          />
-          <Route
-            path="/register"
-            element={
-              <PublicOnly>
-                <Register />
-              </PublicOnly>
-            }
-          />
-          <Route
-            path="/"
-            element={
-              <Protected>
-                <Dashboard />
-              </Protected>
-            }
-          />
-          <Route
-            path="/upload"
-            element={
-              <Protected>
-                <Upload />
-              </Protected>
-            }
-          />
-          <Route
-            path="/machines"
-            element={
-              <Protected>
-                <Machines />
-              </Protected>
-            }
-          />
-          <Route
-            path="/records"
-            element={
-              <Protected>
-                <Records />
-              </Protected>
-            }
-          />
-          <Route
-            path="/alerts"
-            element={
-              <Protected>
-                <Alerts />
-              </Protected>
-            }
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <SimulationProvider>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                <PublicOnly>
+                  <Login />
+                </PublicOnly>
+              }
+            />
+            <Route
+              path="/register"
+              element={
+                <PublicOnly>
+                  <Register />
+                </PublicOnly>
+              }
+            />
+            <Route
+              path="/"
+              element={
+                <Protected>
+                  <Dashboard />
+                </Protected>
+              }
+            />
+            <Route
+              path="/machines"
+              element={
+                <Protected>
+                  <Machines />
+                </Protected>
+              }
+            />
+            <Route
+              path="/records"
+              element={
+                <Protected>
+                  <Records />
+                </Protected>
+              }
+            />
+            <Route
+              path="/alerts"
+              element={
+                <Protected>
+                  <Alerts />
+                </Protected>
+              }
+            />
+            <Route
+              path="/upload"
+              element={
+                <Protected>
+                  <Upload />
+                </Protected>
+              }
+            />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </SimulationProvider>
       </AuthProvider>
     </BrowserRouter>
   );

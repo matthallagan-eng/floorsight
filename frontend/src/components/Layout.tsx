@@ -1,9 +1,11 @@
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import { useAuth } from "../context/AuthContext";
+import { useSimulation } from "../context/SimulationContext";
 
 export default function Layout({ children }: { children: ReactNode }) {
   const { logout } = useAuth();
+  const { live, toggle, stop, tickCount } = useSimulation();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
@@ -16,6 +18,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   ];
 
   function handleLogout() {
+    stop();
     logout();
     navigate("/login");
   }
@@ -44,12 +47,31 @@ export default function Layout({ children }: { children: ReactNode }) {
               ))}
             </nav>
           </div>
-          <button
-            onClick={handleLogout}
-            className="rounded-lg border border-surface-border px-3 py-1.5 text-sm text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-200"
-          >
-            Sign out
-          </button>
+
+          <div className="flex items-center gap-3">
+            {live && (
+              <span className="flex items-center gap-2 text-sm text-status-good">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-status-good" />
+                Live · {tickCount}
+              </span>
+            )}
+            <button
+              onClick={toggle}
+              className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+                live
+                  ? "border-status-bad/40 text-status-bad hover:bg-status-bad/10"
+                  : "border-surface-border text-slate-400 hover:border-slate-600 hover:text-slate-200"
+              }`}
+            >
+              {live ? "Stop" : "Start live data"}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="rounded-lg border border-surface-border px-3 py-1.5 text-sm text-slate-400 transition-colors hover:border-slate-600 hover:text-slate-200"
+            >
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl">{children}</main>

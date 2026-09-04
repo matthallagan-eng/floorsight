@@ -14,50 +14,89 @@ from ..schemas import MachineMetrics
 
 router = APIRouter(prefix="/metrics", tags=["metrics"])
 
-def _scoped_records(db, user, machine_id, days):
-    since = datetime.utcnow() - timedelta(days=days)
-    q = (db.query(ProductionRecord)
-           .join(Machine)
-           .filter(Machine.owner_id == user.id))
-    if machine_id:
-        q = q.filter(ProductionRecord.machine_id == machine_id)
-    return q.all()   # date filter omitted for demo data; see note below
+from datetime import datetime, timedelta
 
-@router.get("/summary", response_model=MetricSummary)
-def summary(machine_id: int | None = None,
-            days: int = Query(30, ge=1, le=365),
-            db: Session = Depends(get_db),
-            current_user: User = Depends(get_current_user)):
-    records = _scoped_records(db, current_user, machine_id, days)
-    r = compute_oee(records)
-    return MetricSummary(
-        oee=r.oee, availability=r.availability,
-        performance=r.performance, quality=r.quality,
-        total_downtime_min=r.total_downtime_min,
-        total_good=r.total_good, total_produced=r.total_produced,
+RANGE_HOURS = {
+    "6h": 6,
+    "24h": 24,
+    "7d": 24 * 7,
+    "30d": 24 * 30,
+    "all": None,
+}
+
+
+def _scoped_records(
+    db: Session,
+    user: User,
+    machine_id: int | None = None,
+    range_key: str = "all",
+):
+    q = (
+        db.query(ProductionRecord)
+        .join(Machine)
+        .filter(Machine.owner_id == user.id)
     )
 
-@router.get("/oee-trend", response_model=list[TimeSeriesPoint])
-def oee_trend(machine_id: int | None = None,
-              db: Session = Depends(get_db),
-              current_user: User = Depends(get_current_user)):
-    records = _scoped_records(db, current_user, machine_id, 30)
+    if machine_id:
+        q = q.filter(ProductionRecord.machine_id == machine_id)
 
-    by_hour: dict[datetime, list] = defaultdict(list)
+    hours = RANGE_HOURS.get(range_key)
+    if hours is not None:
+        latest = q.order_by(ProductionRecord.timestamp.desc()).first()
+        if latest:
+            cutoff = latest.timestamp - timedelta(hours=hours)
+            q = q.filter(ProductionRecord.timestamp >= cutoff)
+
+    return q.all()
+
+@router.get("/summary", response_model=MetricSummary)
+def summary(
+    machine_id: int | None = None,
+    range: str = Query("all", pattern="^(6h|24h|7d|30d|all)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    records = _scoped_records(db, current_user, machine_id, range)
+    r = compute_oee(records)
+    return MetricSummary(
+        oee=r.oee,
+        availability=r.availability,
+        performance=r.performance,
+        quality=r.quality,
+        total_downtime_min=r.total_downtime_min,
+        total_good=r.total_good,
+        total_produced=r.total_produced,
+    )
+
+
+@router.get("/oee-trend", response_model=list[TimeSeriesPoint])
+def oee_trend(
+    machine_id: int | None = None,
+    range: str = Query("all", pattern="^(6h|24h|7d|30d|all)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    records = _scoped_records(db, current_user, machine_id, range)
+
+    by_bucket: dict[datetime, list] = defaultdict(list)
     for rec in records:
         bucket = rec.timestamp.replace(minute=0, second=0, microsecond=0)
-        by_hour[bucket].append(rec)
+        by_bucket[bucket].append(rec)
 
     return [
         TimeSeriesPoint(timestamp=ts, value=compute_oee(recs).oee)
-        for ts, recs in sorted(by_hour.items())
+        for ts, recs in sorted(by_bucket.items())
     ]
 
+
 @router.get("/downtime-by-reason", response_model=list[DowntimeReason])
-def downtime_by_reason(machine_id: int | None = None,
-                       db: Session = Depends(get_db),
-                       current_user: User = Depends(get_current_user)):
-    records = _scoped_records(db, current_user, machine_id, 30)
+def downtime_by_reason(
+    machine_id: int | None = None,
+    range: str = Query("all", pattern="^(6h|24h|7d|30d|all)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    records = _scoped_records(db, current_user, machine_id, range)
 
     totals: dict[str, float] = defaultdict(float)
     for rec in records:
@@ -66,13 +105,14 @@ def downtime_by_reason(machine_id: int | None = None,
 
     return sorted(
         [DowntimeReason(reason=k, minutes=round(v, 1)) for k, v in totals.items()],
-        key=lambda d: d.minutes, reverse=True,
+        key=lambda d: d.minutes,
+        reverse=True,
     )
-
 
 @router.get("/by-machine", response_model=list[MachineMetrics])
 def by_machine(
     line: str | None = None,
+    range: str = Query("all", pattern="^(6h|24h|7d|30d|all)$"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -83,11 +123,7 @@ def by_machine(
 
     out: list[MachineMetrics] = []
     for m in machines:
-        recs = (
-            db.query(ProductionRecord)
-            .filter(ProductionRecord.machine_id == m.id)
-            .all()
-        )
+        recs = _scoped_records(db, current_user, m.id, range)
         r = compute_oee(recs, m.ideal_cycle_time_sec)
         out.append(
             MachineMetrics(
