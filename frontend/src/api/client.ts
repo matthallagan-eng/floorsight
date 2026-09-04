@@ -51,4 +51,35 @@ export const api = {
     });
     return handle<{ rows_imported: number; machines_created: number }>(res);
   },
+
+    async simulate() {
+    const res = await fetch(`${BASE}/uploads/simulate`, {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    return handle<{
+      machines_updated: number;
+      timestamp: string;
+      records_created: number;
+    }>(res);
+  },
+
+  async reset() {
+    const res = await fetch(`${BASE}/uploads/reset`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    return handle<void>(res);
+  },
+
+  async del<T>(path: string): Promise<T> {
+    const res = await fetch(`${BASE}${path}`, {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    return handle<T>(res);
+  },
+
 };
+
+  

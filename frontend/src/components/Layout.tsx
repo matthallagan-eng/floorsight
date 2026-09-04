@@ -9,8 +9,10 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   const nav = [
     { to: "/", label: "Dashboard" },
-    { to: "/upload", label: "Upload" },
+    { to: "/machines", label: "Machines" },
+    { to: "/records", label: "Records" },
     { to: "/alerts", label: "Alerts" },
+    { to: "/upload", label: "Upload" },
   ];
 
   function handleLogout() {

@@ -6,6 +6,9 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Upload from "./pages/Upload";
+import Machines from "./pages/Machines";
+import Records from "./pages/Records";
+import Alerts from "./pages/Alerts";
 
 function Protected({ children }: { children: ReactNode }) {
   const { token } = useAuth();
@@ -53,6 +56,30 @@ export default function App() {
             element={
               <Protected>
                 <Upload />
+              </Protected>
+            }
+          />
+          <Route
+            path="/machines"
+            element={
+              <Protected>
+                <Machines />
+              </Protected>
+            }
+          />
+          <Route
+            path="/records"
+            element={
+              <Protected>
+                <Records />
+              </Protected>
+            }
+          />
+          <Route
+            path="/alerts"
+            element={
+              <Protected>
+                <Alerts />
               </Protected>
             }
           />
