@@ -4,7 +4,7 @@
 
 Production monitoring and OEE analytics for manufacturing teams. Upload production data or stream it live, track Overall Equipment Effectiveness broken into its component parts, and get alerted when machines drop below threshold.
 
-![Dashboard](docs/dashboard.png)
+![Dashboard](docs/Dashboard.png)
 
 ---
 
