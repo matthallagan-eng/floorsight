@@ -11,5 +11,14 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
 
+    @property
+    def sqlalchemy_url(self) -> str:
+        url = self.database_url
+        if url.startswith("postgresql://"):
+            return url.replace("postgresql://", "postgresql+psycopg://", 1)
+        if url.startswith("postgres://"):
+            return url.replace("postgres://", "postgresql+psycopg://", 1)
+        return url
+
 
 settings = Settings()
