@@ -1,3 +1,5 @@
+![CI](https://github.com/matthallagan-eng/floorsight/actions/workflows/ci.yml/badge.svg)
+
 # FloorSight
 
 Production monitoring and OEE analytics for manufacturing teams. Upload production data or stream it live, track Overall Equipment Effectiveness broken into its component parts, and get alerted when machines drop below threshold.
