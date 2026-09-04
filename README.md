@@ -4,13 +4,16 @@
 
 Production monitoring and OEE analytics for manufacturing teams. Upload production data or stream it live, track Overall Equipment Effectiveness broken into its component parts, and get alerted when machines drop below threshold.
 
+**Live demo:** https://floorsight.vercel.app
+**Demo login:** `demo@floorsight.app` / `demotest`
+
 ![Dashboard](docs/Dashboard.png)
 
 ---
 
 ## Why I built this
 
-I spent three years as a controls engineer in food and pharmaceutical manufacturing. Most of that time was on the plant floor with PLCs, HMIs, and industrial networks, and a lot of it was spent watching teams try to answer a simple question: how is the line actually performing right now?
+I have spent four years as a controls engineer in food and pharmaceutical manufacturing. Most of that time was on the plant floor with PLCs, HMIs, and industrial networks, and a lot of it was spent watching teams try to answer a simple question: how is the line actually performing right now?
 
 The answer was usually one of two things. Either the plant had a full MES platform, in which case getting a new dashboard meant a change request and a few weeks of waiting. Or somebody was maintaining an Excel workbook that pulled from a database export and broke every time a machine got renamed. Neither felt good. The data existed. Getting it into a shape people could act on was the hard part.
 
