@@ -4,7 +4,7 @@
 
 Production monitoring and OEE analytics for manufacturing teams. Upload production data or stream it live, track Overall Equipment Effectiveness broken into its component parts, and get alerted when machines drop below threshold.
 
-**Live demo:** https://floorsight.vercel.app
+**Live demo:** https://floorsight-gamma.vercel.app
 **Demo login:** `demo@floorsight.app` / `demotest`
 
 ![Dashboard](docs/Dashboard.png)
